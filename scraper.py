@@ -8,7 +8,7 @@ from pydrive.drive import GoogleDrive
 from oauth2client.service_account import ServiceAccountCredentials
 
 BREED = "RETRIEVER GOLDEN"
-RESULTS_FILE = "results.json"
+RESULTS_FILE = "golden_critiques.json"
 
 def upload_to_drive(filename: str, folder_name: str = "golden-critiques"):
     creds_data = os.getenv("GOOGLE_SERVICE_ACCOUNT_BASE64")
@@ -48,51 +48,81 @@ async def login_and_scrape(page):
     await page.click('input[type="submit"]')
     await page.wait_for_selector("text=Championship Show Reports")
 
-    show_links = await page.locator('a:has-text("Championship Show")').all()
-    print(f"Found {len(show_links)} shows for {BREED}")
-
     critiques = []
+    current_year = None
 
-    for i in range(len(show_links)):
-        await page.goto("https://www.ourdogs.co.uk/members/breedsearch1.php")
-        await page.fill('input[name="breed"]', BREED)
-        await page.click('input[type="submit"]')
-        await page.wait_for_selector("text=Championship Show Reports")
+    while True:
+        year_headers = await page.locator("text=CHAMPIONSHIP SHOWS").all()
+        all_headers = await page.locator("body >> *").all()
+
+        year_map = {}
+        year = None
+        for el in all_headers:
+            txt = await el.inner_text()
+            if txt.strip().endswith("CHAMPIONSHIP SHOWS"):
+                year = re.search(r"(20\d{2})", txt)
+                if year:
+                    current_year = int(year.group(1))
+            elif "Championship Show" in txt and current_year:
+                href = await el.locator("a").get_attribute("href")
+                year_map[href] = current_year
+
         show_links = await page.locator('a:has-text("Championship Show")').all()
-        link = show_links[i]
-        href = await link.get_attribute("href")
-        url = f"https://www.ourdogs.co.uk/members/{href}"
-        print(f"Scraping {url}")
-        await page.goto(url)
+        print(f"Found {len(show_links)} shows on current page")
 
-        text = await page.text_content("body")
+        for link in show_links:
+            href = await link.get_attribute("href")
+            if not href:
+                continue
+            url = f"https://www.ourdogs.co.uk/members/{href}"
+            year = year_map.get(href, "Unknown")
 
-        show_match = re.search(r"Championship Show\s*-\s*(.*?)\s*\n", text)
-        judge_match = re.search(r"\n([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\.\s*$", text.strip())
+            print(f"Scraping {url}")
+            await page.goto(url)
+            text = await page.text_content("body")
 
-        show = show_match.group(1).strip() if show_match else "Unknown Show"
-        judge = judge_match.group(1).strip() if judge_match else "Unknown"
+            show_match = re.search(r"Championship Show\s*-\s*(.*?)\s*\n", text)
+            judge_match = re.search(r"\n([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\.\s*$", text.strip())
 
-        classes = re.findall(r"\n([A-Z]{2,4})\s*\((\d+),\s*(\d+)\)\s*(.*?)\n(?=[A-Z]{2,4}|\Z)", text, re.DOTALL)
+            show = show_match.group(1).strip() if show_match else "Unknown Show"
+            judge = judge_match.group(1).strip() if judge_match else "Unknown"
 
-        for class_code, entries, absents, block in classes:
-            placements = re.findall(r"(\d)\s+([A-Za-z’'`&.\s]+)’s\s+(.*?)\.(.*?)?(?=\n\d|\n[A-Z]{2,4}|\Z)", block, re.DOTALL)
-            entry = {
-                "show": show,
-                "judge": judge,
-                "class": class_code.strip(),
-                "entries": int(entries),
-                "absent": int(absents),
-                "placements": []
-            }
-            for place, owner, dog, critique in placements:
-                entry["placements"].append({
-                    "place": int(place),
-                    "owner": owner.strip(),
-                    "dog": dog.strip(),
-                    "critique": critique.strip() if int(place) in [1, 2] else ""
-                })
-            critiques.append(entry)
+            classes = re.findall(r"\n([A-Z]{2,4})\s*\((\d+),\s*(\d+)\)\s*(.*?)\n(?=[A-Z]{2,4}|\Z)", text, re.DOTALL)
+
+            for class_code, entries, absents, block in classes:
+                placements = re.findall(
+                    r"(\d)\s+([A-Za-zâ'`&.\s]+)âs\s+(.*?)\.(.*?)?(?=\n\d|\n[A-Z]{2,4}|\Z)",
+                    block,
+                    re.DOTALL
+                )
+                entry = {
+                    "show": show,
+                    "year": year,
+                    "judge": judge,
+                    "class": class_code.strip(),
+                    "entries": int(entries),
+                    "absent": int(absents),
+                    "placements": []
+                }
+                for place, owner, dog, critique in placements:
+                    entry["placements"].append({
+                        "place": int(place),
+                        "owner": owner.strip(),
+                        "dog": dog.strip(),
+                        "critique": critique.strip() if int(place) in [1, 2] else ""
+                    })
+                critiques.append(entry)
+
+            await page.go_back()
+            await page.wait_for_selector('a:has-text("Championship Show")')
+
+        next_button = page.locator('a:has-text("Next >>")')
+        if await next_button.count() == 0:
+            break
+
+        print("Clicking Next...")
+        await next_button.first.click()
+        await page.wait_for_selector('a:has-text("Championship Show")')
 
     return critiques
 
