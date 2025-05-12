@@ -133,7 +133,8 @@ async def run_scraper():
         page = await context.new_page()
 
         await page.goto("https://www.ourdogs.co.uk/members/breedsearch1.php")
-        if "login" in await page.content().lower():
+        page_content = await page.content()
+        if "login" in page_content.lower():
             await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
             await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
             await page.click('input[type="submit"]')
