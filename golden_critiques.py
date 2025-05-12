@@ -129,16 +129,16 @@ async def login_and_scrape(page):
 async def run_scraper():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
-        page = await context.new_page()
 
+        context = await browser.new_context(
+            http_credentials={
+                "username": os.getenv("OURDOGS_USER"),
+                "password": os.getenv("OURDOGS_PASS")
+            }
+        )
+
+        page = await context.new_page()
         await page.goto("https://www.ourdogs.co.uk/members/breedsearch1.php")
-        page_content = await page.content()
-        if "login" in page_content.lower():
-            await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
-            await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
-            await page.click('input[type="submit"]')
-            await page.wait_for_load_state("networkidle")
 
         new_data = await login_and_scrape(page)
 
