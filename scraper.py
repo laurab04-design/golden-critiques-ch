@@ -1,39 +1,42 @@
-from pathlib import Path
 
-# Scaffold code for golden_critiques/scraper.py
-scraper_code = """
-import os
+import asyncio
 from playwright.async_api import async_playwright
-from bs4 import BeautifulSoup
+import os
+import re
+import json
 
 OURDOGS_USER = os.getenv("OURDOGS_USER")
 OURDOGS_PASS = os.getenv("OURDOGS_PASS")
 
-async def run_scraper():
+BASE_URL = "https://www.ourdogs.co.uk"
+
+async def login_and_scrape_critiques():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
         page = await context.new_page()
 
-        # Step 1: Login
-        await page.goto("https://www.ourdogs.co.uk/loginpage.php")
-        await page.fill('input[name="username"]', OURDOGS_USER)
-        await page.fill('input[name="password"]', OURDOGS_PASS)
-        await page.click('input[type="submit"]')
+        # Go to login page
+        await page.goto(f"{BASE_URL}/members/login.php")
+
+        # Fill in credentials and submit
+        await page.fill("input[name='username']", OURDOGS_USER)
+        await page.fill("input[name='password']", OURDOGS_PASS)
+        await page.click("input[type='submit']")
+
+        # Wait for navigation
         await page.wait_for_load_state("networkidle")
 
-        # Step 2: Navigate to critiques index
-        await page.goto("https://www.ourdogs.co.uk/members/gen-champshows/gen-chshow-index.php")
+        # Navigate to critiques
+        await page.goto(f"{BASE_URL}/members/gen-champshows/gen-chshow-index.php")
         await page.wait_for_load_state("networkidle")
 
-        # Future: expand links, parse critiques, etc.
+        # Simulate clicks if needed (we'll add breed filtering and critiques later)
+
+        # Placeholder: Output that login succeeded
+        print("Login successful and navigated to critique index.")
 
         await browser.close()
-        return {"status": "success", "message": "Login and initial navigation complete."}
-"""
 
-# Write to golden_critiques/scraper.py
-scraper_path = Path("/mnt/data/golden_critiques_scraper.py")
-scraper_path.write_text(scraper_code.strip())
-
-scraper_path.name
+if __name__ == "__main__":
+    asyncio.run(login_and_scrape_critiques())
