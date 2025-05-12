@@ -58,14 +58,20 @@ async def login_and_scrape(page):
         year_map = {}
         year = None
         for el in all_headers:
-            txt = await el.inner_text()
+            try:
+                txt = await el.inner_text()
+            except:
+                continue
             if txt.strip().endswith("CHAMPIONSHIP SHOWS"):
                 year = re.search(r"(20\d{2})", txt)
                 if year:
                     current_year = int(year.group(1))
             elif "Championship Show" in txt and current_year:
-                href = await el.locator("a").get_attribute("href")
-                year_map[href] = current_year
+                try:
+                    href = await el.locator("a").get_attribute("href")
+                    year_map[href] = current_year
+                except:
+                    continue
 
         show_links = await page.locator('a:has-text("Championship Show")').all()
         print(f"Found {len(show_links)} shows on current page")
@@ -91,7 +97,7 @@ async def login_and_scrape(page):
 
             for class_code, entries, absents, block in classes:
                 placements = re.findall(
-                    r"(\d)\s+([A-Za-zâ'`&.\s]+)âs\s+(.*?)\.(.*?)?(?=\n\d|\n[A-Z]{2,4}|\Z)",
+                    r"(\d)\s+([A-Za-z’'`&.\s]+)’s\s+(.*?)\.(.*?)?(?=\n\d|\n[A-Z]{2,4}|\Z)",
                     block,
                     re.DOTALL
                 )
@@ -129,16 +135,16 @@ async def login_and_scrape(page):
 async def run_scraper():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-
-        context = await browser.new_context(
-            http_credentials={
-                "username": os.getenv("OURDOGS_USER"),
-                "password": os.getenv("OURDOGS_PASS")
-            }
-        )
-
+        context = await browser.new_context()
         page = await context.new_page()
+
         await page.goto("https://www.ourdogs.co.uk/members/breedsearch1.php")
+        page_content = await page.content()
+        if "username" in page_content.lower():
+            await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
+            await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
+            await page.click('input[type="submit"]')
+            await page.wait_for_load_state("networkidle")
 
         new_data = await login_and_scrape(page)
 
