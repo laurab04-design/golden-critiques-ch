@@ -12,8 +12,8 @@ def root():
 @app.get("/run")
 async def run():
     try:
-        results = await run_scraper()
-        upload_to_drive(results)
+        await run_scraper()
+        upload_to_drive("golden_critiques.json")
         return {"status": "success", "message": "Scraper run completed and uploaded to Google Drive."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
