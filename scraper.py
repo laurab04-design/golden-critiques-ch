@@ -139,10 +139,26 @@ async def run_scraper():
             await page.click('input[type="submit"]')
             await page.wait_for_load_state("networkidle")
 
-        data = await login_and_scrape(page)
+        new_data = await login_and_scrape(page)
 
+        try:
+            with open(RESULTS_FILE, "r", encoding="utf-8") as f:
+                existing_data = json.load(f)
+            seen = set((entry["show"], entry["year"]) for entry in existing_data)
+        except FileNotFoundError:
+            existing_data = []
+            seen = set()
+
+        fresh = []
+        for entry in new_data:
+            key = (entry["show"], entry["year"])
+            if key not in seen:
+                fresh.append(entry)
+                seen.add(key)
+
+        combined = existing_data + fresh
         with open(RESULTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+            json.dump(combined, f, indent=2)
 
         upload_to_drive(RESULTS_FILE)
         await browser.close()
