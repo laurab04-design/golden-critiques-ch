@@ -115,6 +115,16 @@ async def run_scraper():
         context = await browser.new_context()
         page = await context.new_page()
 
+        # Start by logging in
+        await page.goto("https://www.ourdogs.co.uk/members/index.php")
+        await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
+        await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
+        await page.click('input[type="submit"]')
+        await page.wait_for_load_state("networkidle")
+
+        # Now go to the actual critiques page
+        await page.goto("https://www.ourdogs.co.uk/app1/champshows.php")
+
         new_data = await login_and_scrape(page)
 
         try:
@@ -136,10 +146,6 @@ async def run_scraper():
         with open(RESULTS_FILE, "w", encoding="utf-8") as f:
             json.dump(combined, f, indent=2)
 
-        if fresh:
-            upload_to_drive(RESULTS_FILE)
-        else:
-            print("No new data. Skipping upload.")
-
+        upload_to_drive(RESULTS_FILE)
         await browser.close()
         print("Scraping complete.")
