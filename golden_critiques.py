@@ -125,13 +125,15 @@ async def run_scraper():
         context = await browser.new_context()
         page = await context.new_page()
 
+        # Login FIRST via correct entry point
+        await page.goto("https://www.ourdogs.co.uk/members/index.php")
+        await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
+        await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
+        await page.click('input[type="submit"]')
+        await page.wait_for_load_state("networkidle")
+
+        # Then navigate to the critiques list
         await page.goto("https://www.ourdogs.co.uk/app1/champshows.php")
-        page_content = await page.content()
-        if "username" in page_content.lower():
-            await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
-            await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
-            await page.click('input[type="submit"]')
-            await page.wait_for_load_state("networkidle")
 
         new_data = await login_and_scrape(page)
 
@@ -157,4 +159,3 @@ async def run_scraper():
         upload_to_drive(RESULTS_FILE)
         await browser.close()
         print("Scraping complete.")
-    
