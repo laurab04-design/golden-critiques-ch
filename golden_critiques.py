@@ -58,7 +58,7 @@ async def login_and_scrape(page):
         await page.goto(full_url)
         await page.wait_for_load_state("networkidle")
 
-        breed_links = await page.locator(f'a:has-text("{BREED}")').all()
+        breed_links = await page.locator(f'a:has-text("{BREED.upper()}")').all()
         for breed_link in breed_links:
             show_url = await breed_link.get_attribute("href")
             if not show_url:
@@ -109,14 +109,22 @@ async def run_scraper():
         context = await browser.new_context()
         page = await context.new_page()
 
-        # Log in once
-        await page.goto(f"{BASE_URL}/members/index.php")
-        await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
-        await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
-        await page.click('input[type="submit"]')
-        await page.wait_for_load_state("networkidle")
+        try:
+            await page.goto(f"{BASE_URL}/members/index.php", wait_until="domcontentloaded")
+            await page.wait_for_selector('input[name="username"]', timeout=15000)
+            await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
+            await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
+            await page.click('input[type="submit"]')
+            await page.wait_for_load_state("networkidle")
+        except Exception as e:
+            print("Login failed or not detected. Dumping HTML and screenshot...")
+            html = await page.content()
+            with open("login_debug.html", "w", encoding="utf-8") as f:
+                f.write(html)
+            await page.screenshot(path="login_debug.png")
+            raise RuntimeError("Could not log in to Our Dogs site.") from e
 
-        # Then scrape
+        await page.goto(f"{BASE_URL}/app1/champshows.php")
         new_data = await login_and_scrape(page)
 
         try:
@@ -127,14 +135,9 @@ async def run_scraper():
             existing_data = []
             seen = set()
 
-        fresh = []
-        for entry in new_data:
-            key = (entry["show"], entry["year"])
-            if key not in seen:
-                fresh.append(entry)
-                seen.add(key)
-
+        fresh = [entry for entry in new_data if (entry["show"], entry["year"]) not in seen]
         combined = existing_data + fresh
+
         with open(RESULTS_FILE, "w", encoding="utf-8") as f:
             json.dump(combined, f, indent=2)
 
