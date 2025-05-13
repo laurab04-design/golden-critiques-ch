@@ -43,92 +43,79 @@ def upload_to_drive(filename: str, folder_name: str = "golden-critiques"):
     print(f"Uploaded {filename} to Google Drive folder '{folder_name}'")
 
 async def login_and_scrape(page):
-    await page.goto("https://www.ourdogs.co.uk/app1/champshows.php")
-    await page.fill('input[name="breed"]', BREED)
-    await page.click('input[type="submit"]')
-    await page.wait_for_selector("text=Championship Show Reports")
-
     critiques = []
-    current_year = None
+    base_url = "https://www.ourdogs.co.uk/app1/champshows.php"
+    await page.goto(base_url)
 
-    while True:
-        year_headers = await page.locator("text=CHAMPIONSHIP SHOWS").all()
-        all_headers = await page.locator("body >> *").all()
+    year_selectors = [
+        'input[placeholder*="2025"]',
+        'input[placeholder*="2024"]',
+        'input[placeholder*="2023"]',
+        'input[placeholder*="2022"]',
+        'input[placeholder*="2021"]',
+        'input[placeholder*="2020"]',
+        'input[placeholder*="2019"]',
+        'input[placeholder*="2018"]',
+        'input[placeholder*="2017"]',
+        'input[placeholder*="2016"]',
+        'input[placeholder*="2015"]',
+        'input[placeholder*="2014"]',
+        'input[placeholder*="2013"]',
+        'input[placeholder*="2012"]',
+    ]
 
-        year_map = {}
-        year = None
-        for el in all_headers:
-            try:
-                txt = await el.inner_text()
-            except:
-                continue
-            if txt.strip().endswith("CHAMPIONSHIP SHOWS"):
-                year = re.search(r"(20\d{2})", txt)
-                if year:
-                    current_year = int(year.group(1))
-            elif "Championship Show" in txt and current_year:
-                try:
-                    href = await el.locator("a").get_attribute("href")
-                    year_map[href] = current_year
-                except:
+    for selector in year_selectors:
+        try:
+            await page.fill(selector, BREED)
+            await page.locator(f'{selector} ~ input[type="submit"]').click()
+            await page.wait_for_selector('a:has-text("Championship Show")', timeout=10000)
+
+            show_links = await page.locator('a:has-text("Championship Show")').all()
+            for link in show_links:
+                href = await link.get_attribute("href")
+                if not href:
                     continue
+                url = f"https://www.ourdogs.co.uk/app1/{href}"
+                print(f"Scraping {url}")
+                await page.goto(url)
+                text = await page.text_content("body")
 
-        show_links = await page.locator('a:has-text("Championship Show")').all()
-        print(f"Found {len(show_links)} shows on current page")
+                show_match = re.search(r"Championship Show\s*-\s*(.*?)\s*\n", text)
+                judge_match = re.search(r"\n([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\.\s*$", text.strip())
 
-        for link in show_links:
-            href = await link.get_attribute("href")
-            if not href:
-                continue
-            url = f"https://www.ourdogs.co.uk/members/{href}"
-            year = year_map.get(href, "Unknown")
+                show = show_match.group(1).strip() if show_match else "Unknown Show"
+                judge = judge_match.group(1).strip() if judge_match else "Unknown"
+                year_match = re.search(r"(20\d{2})", show)
+                year = int(year_match.group(1)) if year_match else "Unknown"
 
-            print(f"Scraping {url}")
-            await page.goto(url)
-            text = await page.text_content("body")
+                classes = re.findall(r"\n([A-Z]{2,4})\s*\((\d+),\s*(\d+)\)\s*(.*?)\n(?=[A-Z]{2,4}|\Z)", text, re.DOTALL)
+                for class_code, entries, absents, block in classes:
+                    placements = re.findall(
+                        r"(\d)\s+([A-Za-z’'`&.\s]+)’s\s+(.*?)\.(.*?)?(?=\n\d|\n[A-Z]{2,4}|\Z)",
+                        block,
+                        re.DOTALL
+                    )
+                    entry = {
+                        "show": show,
+                        "year": year,
+                        "judge": judge,
+                        "class": class_code.strip(),
+                        "entries": int(entries),
+                        "absent": int(absents),
+                        "placements": []
+                    }
+                    for place, owner, dog, critique in placements:
+                        entry["placements"].append({
+                            "place": int(place),
+                            "owner": owner.strip(),
+                            "dog": dog.strip(),
+                            "critique": critique.strip() if int(place) in [1, 2] else ""
+                        })
+                    critiques.append(entry)
 
-            show_match = re.search(r"Championship Show\s*-\s*(.*?)\s*\n", text)
-            judge_match = re.search(r"\n([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\.\s*$", text.strip())
-
-            show = show_match.group(1).strip() if show_match else "Unknown Show"
-            judge = judge_match.group(1).strip() if judge_match else "Unknown"
-
-            classes = re.findall(r"\n([A-Z]{2,4})\s*\((\d+),\s*(\d+)\)\s*(.*?)\n(?=[A-Z]{2,4}|\Z)", text, re.DOTALL)
-
-            for class_code, entries, absents, block in classes:
-                placements = re.findall(
-                    r"(\d)\s+([A-Za-z’'`&.\s]+)’s\s+(.*?)\.(.*?)?(?=\n\d|\n[A-Z]{2,4}|\Z)",
-                    block,
-                    re.DOTALL
-                )
-                entry = {
-                    "show": show,
-                    "year": year,
-                    "judge": judge,
-                    "class": class_code.strip(),
-                    "entries": int(entries),
-                    "absent": int(absents),
-                    "placements": []
-                }
-                for place, owner, dog, critique in placements:
-                    entry["placements"].append({
-                        "place": int(place),
-                        "owner": owner.strip(),
-                        "dog": dog.strip(),
-                        "critique": critique.strip() if int(place) in [1, 2] else ""
-                    })
-                critiques.append(entry)
-
-            await page.go_back()
-            await page.wait_for_selector('a:has-text("Championship Show")')
-
-        next_button = page.locator('a:has-text("Next >>")')
-        if await next_button.count() == 0:
-            break
-
-        print("Clicking Next...")
-        await next_button.first.click()
-        await page.wait_for_selector('a:has-text("Championship Show")')
+                await page.goto(base_url)
+        except Exception as e:
+            print(f"Skipping year due to error: {e}")
 
     return critiques
 
