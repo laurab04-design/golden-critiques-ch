@@ -7,7 +7,7 @@ from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from oauth2client.service_account import ServiceAccountCredentials
 
-BREED = "RETRIEVER (GOLDEN)"
+BREED = "RETRIEVER GOLDEN"
 RESULTS_FILE = "golden_critiques.json"
 BASE_URL = "https://www.ourdogs.co.uk"
 
@@ -44,12 +44,6 @@ def upload_to_drive(filename: str, folder_name: str = "golden-critiques"):
     print(f"Uploaded {filename} to Google Drive folder '{folder_name}'")
 
 async def login_and_scrape(page):
-    await page.goto(f"{BASE_URL}/members/index.php")
-    await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
-    await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
-    await page.click('input[type="submit"]')
-    await page.wait_for_load_state("networkidle")
-
     critiques = []
     await page.goto(f"{BASE_URL}/app1/champshows.php")
     year_links = await page.locator('a:has-text("20")').all()
@@ -64,7 +58,7 @@ async def login_and_scrape(page):
         await page.goto(full_url)
         await page.wait_for_load_state("networkidle")
 
-        breed_links = await page.locator(f'a:has-text("{BREED.upper()}")').all()
+        breed_links = await page.locator(f'a:has-text("{BREED}")').all()
         for breed_link in breed_links:
             show_url = await breed_link.get_attribute("href")
             if not show_url:
@@ -115,16 +109,14 @@ async def run_scraper():
         context = await browser.new_context()
         page = await context.new_page()
 
-        # Start by logging in
-        await page.goto("https://www.ourdogs.co.uk/members/index.php")
+        # Log in once
+        await page.goto(f"{BASE_URL}/members/index.php")
         await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
         await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
         await page.click('input[type="submit"]')
         await page.wait_for_load_state("networkidle")
 
-        # Now go to the actual critiques page
-        await page.goto("https://www.ourdogs.co.uk/app1/champshows.php")
-
+        # Then scrape
         new_data = await login_and_scrape(page)
 
         try:
