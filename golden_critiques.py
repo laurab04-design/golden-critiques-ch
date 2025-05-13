@@ -7,7 +7,7 @@ from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from oauth2client.service_account import ServiceAccountCredentials
 
-BREED = "RETRIEVER GOLDEN"
+BREED = "RETRIEVER (GOLDEN)"
 RESULTS_FILE = "golden_critiques.json"
 BASE_URL = "https://www.ourdogs.co.uk"
 
@@ -43,13 +43,21 @@ def upload_to_drive(filename: str, folder_name: str = "golden-critiques"):
     file.Upload()
     print(f"Uploaded {filename} to Google Drive folder '{folder_name}'")
 
+async def upload_debug_to_drive(page):
+    html = await page.content()
+    with open("debug_login.html", "w", encoding="utf-8") as f:
+        f.write(html)
+    await page.screenshot(path="debug_login.png", full_page=True)
+    upload_to_drive("debug_login.html")
+    upload_to_drive("debug_login.png")
+    print("Uploaded login debug files.")
+
 async def login_and_scrape(page):
     critiques = []
     await page.goto(f"{BASE_URL}/app1/champshows.php")
     year_links = await page.locator('a:has-text("20")').all()
 
     for link in year_links:
-        year_text = await link.inner_text()
         href = await link.get_attribute("href")
         if not href:
             continue
@@ -109,22 +117,19 @@ async def run_scraper():
         context = await browser.new_context()
         page = await context.new_page()
 
+        # Attempt login
+        await page.goto(f"{BASE_URL}/members/index.php")
         try:
-            await page.goto(f"{BASE_URL}/members/index.php", wait_until="domcontentloaded")
-            await page.wait_for_selector('input[name="username"]', timeout=15000)
             await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
             await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
             await page.click('input[type="submit"]')
             await page.wait_for_load_state("networkidle")
-        except Exception as e:
+        except Exception:
             print("Login failed or not detected. Dumping HTML and screenshot...")
-            html = await page.content()
-            with open("login_debug.html", "w", encoding="utf-8") as f:
-                f.write(html)
-            await page.screenshot(path="login_debug.png")
-            raise RuntimeError("Could not log in to Our Dogs site.") from e
+            await upload_debug_to_drive(page)
+            await browser.close()
+            return
 
-        await page.goto(f"{BASE_URL}/app1/champshows.php")
         new_data = await login_and_scrape(page)
 
         try:
