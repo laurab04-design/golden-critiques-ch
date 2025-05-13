@@ -7,8 +7,9 @@ from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from oauth2client.service_account import ServiceAccountCredentials
 
-BREED = "RETRIEVER GOLDEN"
+BREED = "RETRIEVER (GOLDEN)"
 RESULTS_FILE = "golden_critiques.json"
+BASE_URL = "https://www.ourdogs.co.uk"
 
 def upload_to_drive(filename: str, folder_name: str = "golden-critiques"):
     creds_data = os.getenv("GOOGLE_SERVICE_ACCOUNT_BASE64")
@@ -43,79 +44,68 @@ def upload_to_drive(filename: str, folder_name: str = "golden-critiques"):
     print(f"Uploaded {filename} to Google Drive folder '{folder_name}'")
 
 async def login_and_scrape(page):
+    await page.goto(f"{BASE_URL}/members/index.php")
+    await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
+    await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
+    await page.click('input[type="submit"]')
+    await page.wait_for_load_state("networkidle")
+
     critiques = []
-    base_url = "https://www.ourdogs.co.uk/app1/champshows.php"
-    await page.goto(base_url)
+    await page.goto(f"{BASE_URL}/app1/champshows.php")
+    year_links = await page.locator('a:has-text("20")').all()
 
-    year_selectors = [
-        'input[placeholder*="2025"]',
-        'input[placeholder*="2024"]',
-        'input[placeholder*="2023"]',
-        'input[placeholder*="2022"]',
-        'input[placeholder*="2021"]',
-        'input[placeholder*="2020"]',
-        'input[placeholder*="2019"]',
-        'input[placeholder*="2018"]',
-        'input[placeholder*="2017"]',
-        'input[placeholder*="2016"]',
-        'input[placeholder*="2015"]',
-        'input[placeholder*="2014"]',
-        'input[placeholder*="2013"]',
-        'input[placeholder*="2012"]',
-    ]
+    for link in year_links:
+        year_text = await link.inner_text()
+        href = await link.get_attribute("href")
+        if not href:
+            continue
+        full_url = f"{BASE_URL}/app1/{href}"
+        print(f"Visiting year page: {full_url}")
+        await page.goto(full_url)
+        await page.wait_for_load_state("networkidle")
 
-    for selector in year_selectors:
-        try:
-            await page.fill(selector, BREED)
-            await page.locator(f'{selector} ~ input[type="submit"]').click()
-            await page.wait_for_selector('a:has-text("Championship Show")', timeout=10000)
+        breed_links = await page.locator(f'a:has-text("{BREED.upper()}")').all()
+        for breed_link in breed_links:
+            show_url = await breed_link.get_attribute("href")
+            if not show_url:
+                continue
+            full_show_url = f"{BASE_URL}/app1/{show_url}"
+            print(f"Scraping {full_show_url}")
+            await page.goto(full_show_url)
+            text = await page.text_content("body")
 
-            show_links = await page.locator('a:has-text("Championship Show")').all()
-            for link in show_links:
-                href = await link.get_attribute("href")
-                if not href:
-                    continue
-                url = f"https://www.ourdogs.co.uk/app1/{href}"
-                print(f"Scraping {url}")
-                await page.goto(url)
-                text = await page.text_content("body")
+            show_match = re.search(r"Championship Show\s*-\s*(.*?)\s*\n", text)
+            judge_match = re.search(r"\n([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\.\s*$", text.strip())
 
-                show_match = re.search(r"Championship Show\s*-\s*(.*?)\s*\n", text)
-                judge_match = re.search(r"\n([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\.\s*$", text.strip())
+            show = show_match.group(1).strip() if show_match else "Unknown Show"
+            judge = judge_match.group(1).strip() if judge_match else "Unknown"
+            year_match = re.search(r"(20\d{2})", show)
+            year = int(year_match.group(1)) if year_match else "Unknown"
 
-                show = show_match.group(1).strip() if show_match else "Unknown Show"
-                judge = judge_match.group(1).strip() if judge_match else "Unknown"
-                year_match = re.search(r"(20\d{2})", show)
-                year = int(year_match.group(1)) if year_match else "Unknown"
-
-                classes = re.findall(r"\n([A-Z]{2,4})\s*\((\d+),\s*(\d+)\)\s*(.*?)\n(?=[A-Z]{2,4}|\Z)", text, re.DOTALL)
-                for class_code, entries, absents, block in classes:
-                    placements = re.findall(
-                        r"(\d)\s+([A-Za-z’'`&.\s]+)’s\s+(.*?)\.(.*?)?(?=\n\d|\n[A-Z]{2,4}|\Z)",
-                        block,
-                        re.DOTALL
-                    )
-                    entry = {
-                        "show": show,
-                        "year": year,
-                        "judge": judge,
-                        "class": class_code.strip(),
-                        "entries": int(entries),
-                        "absent": int(absents),
-                        "placements": []
-                    }
-                    for place, owner, dog, critique in placements:
-                        entry["placements"].append({
-                            "place": int(place),
-                            "owner": owner.strip(),
-                            "dog": dog.strip(),
-                            "critique": critique.strip() if int(place) in [1, 2] else ""
-                        })
-                    critiques.append(entry)
-
-                await page.goto(base_url)
-        except Exception as e:
-            print(f"Skipping year due to error: {e}")
+            classes = re.findall(r"\n([A-Z]{2,4})\s*\((\d+),\s*(\d+)\)\s*(.*?)\n(?=[A-Z]{2,4}|\Z)", text, re.DOTALL)
+            for class_code, entries, absents, block in classes:
+                placements = re.findall(
+                    r"(\d)\s+([A-Za-z’'`&.\s]+)’s\s+(.*?)\.(.*?)?(?=\n\d|\n[A-Z]{2,4}|\Z)",
+                    block,
+                    re.DOTALL
+                )
+                entry = {
+                    "show": show,
+                    "year": year,
+                    "judge": judge,
+                    "class": class_code.strip(),
+                    "entries": int(entries),
+                    "absent": int(absents),
+                    "placements": []
+                }
+                for place, owner, dog, critique in placements:
+                    entry["placements"].append({
+                        "place": int(place),
+                        "owner": owner.strip(),
+                        "dog": dog.strip(),
+                        "critique": critique.strip() if int(place) in [1, 2] else ""
+                    })
+                critiques.append(entry)
 
     return critiques
 
@@ -124,16 +114,6 @@ async def run_scraper():
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
         page = await context.new_page()
-
-        # Login FIRST via correct entry point
-        await page.goto("https://www.ourdogs.co.uk/members/index.php")
-        await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
-        await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
-        await page.click('input[type="submit"]')
-        await page.wait_for_load_state("networkidle")
-
-        # Then navigate to the critiques list
-        await page.goto("https://www.ourdogs.co.uk/app1/champshows.php")
 
         new_data = await login_and_scrape(page)
 
@@ -156,6 +136,10 @@ async def run_scraper():
         with open(RESULTS_FILE, "w", encoding="utf-8") as f:
             json.dump(combined, f, indent=2)
 
-        upload_to_drive(RESULTS_FILE)
+        if fresh:
+            upload_to_drive(RESULTS_FILE)
+        else:
+            print("No new data. Skipping upload.")
+
         await browser.close()
         print("Scraping complete.")
