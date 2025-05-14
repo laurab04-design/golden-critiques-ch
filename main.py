@@ -12,8 +12,8 @@ def root():
 @app.get("/run")
 async def run():
     try:
-        await run_scraper()  # This must be async
-        await upload_to_drive("golden_critiques.json")  # This is async
+        await run_scraper()  # async Playwright
+        upload_to_drive("golden_critiques.json", "application/json")  # sync upload
         return {"status": "success", "message": "Scraper run completed and uploaded to Google Drive."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
