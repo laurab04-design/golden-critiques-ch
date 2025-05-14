@@ -82,19 +82,15 @@ async def login_and_scrape(page):
 async def run_scraper():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
+        context = await browser.new_context(
+            http_credentials={"username": username, "password": password}
+        )
         page = await context.new_page()
 
-        # Attempt login
-        await page.goto(f"{BASE_URL}/members/index.php")
-
         try:
-            await page.fill('input[name="username"]', username)
-            await page.fill('input[name="password"]', password)
-            await page.click('input[type="submit"][value="Sign In"]')
-            await page.wait_for_load_state("networkidle")
+            await page.goto(f"{BASE_URL}/app1/champshows.php")
         except Exception:
-            print("Login failed or not detected. Dumping HTML and screenshot...")
+            print("Login failed or page load failed. Dumping debug files...")
             await upload_debug_to_drive(page)
             await browser.close()
             return
