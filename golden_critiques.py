@@ -7,7 +7,7 @@ from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from oauth2client.service_account import ServiceAccountCredentials
 
-BREED = "RETRIEVER (GOLDEN)"
+BREED = "RETRIEVER GOLDEN"
 RESULTS_FILE = "golden_critiques.json"
 BASE_URL = "https://www.ourdogs.co.uk"
 
@@ -25,17 +25,7 @@ def upload_to_drive(filename: str, folder_name: str = "golden-critiques"):
     gauth.credentials = credentials
     drive = GoogleDrive(gauth)
 
-    folder_id = None
-    file_list = drive.ListFile({
-        'q': f"title='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    }).GetList()
-    if file_list:
-        folder_id = file_list[0]['id']
-    else:
-        folder_metadata = {'title': folder_name, 'mimeType': 'application/vnd.google-apps.folder'}
-        folder = drive.CreateFile(folder_metadata)
-        folder.Upload()
-        folder_id = folder['id']
+    folder_id = os.getenv("GDRIVE_FOLDER_ID")
 
     file_metadata = {'title': filename, 'parents': [{'id': folder_id}]}
     file = drive.CreateFile(file_metadata)
