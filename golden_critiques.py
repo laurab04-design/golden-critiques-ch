@@ -89,8 +89,8 @@ async def run_scraper():
         # Attempt login
         await page.goto(f"{BASE_URL}/members/index.php")
         try:
-            await page.fill('input[name="username"]', os.getenv("OURDOGS_USER"))
-            await page.fill('input[name="password"]', os.getenv("OURDOGS_PASS"))
+            await page.fill('input[name="username"]')
+            await page.fill('input[name="password"]')
             await page.click('input[type="submit"]')
             await page.wait_for_load_state("networkidle")
         except Exception:
