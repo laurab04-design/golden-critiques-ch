@@ -9,6 +9,9 @@ BREED = "RETRIEVER GOLDEN"
 RESULTS_FILE = "golden_critiques.json"
 BASE_URL = "https://www.ourdogs.co.uk"
 
+username = os.env("OURDOGS_USER")
+password = os.env("OURDOGS_PASS")
+
 async def upload_debug_to_drive(page):
     html = await page.content()
     with open("debug_login.html", "w", encoding="utf-8") as f:
