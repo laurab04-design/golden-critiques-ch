@@ -4,7 +4,7 @@ import re
 from playwright.async_api import async_playwright
 from drive_utils import upload_to_drive
 
-BREED = "RETRIEVER GOLDEN"
+BREED = "Retriever (Golden)"
 RESULTS_FILE = "golden_critiques.json"
 BASE_URL = "https://www.ourdogs.co.uk"
 
@@ -25,22 +25,25 @@ async def login_and_scrape(page):
     await page.goto(f"{BASE_URL}/app1/champshows.php")
     year_links = await page.locator('a:has-text("20")').all()
 
+    print(f"Found {len(year_links)} year links...")
     for link in year_links:
+        year_text = await link.inner_text()
+        print(f"  Visiting year: {year_text}")
         href = await link.get_attribute("href")
         if not href:
             continue
         full_url = f"{BASE_URL}/app1/{href}"
-        print(f"Visiting year page: {full_url}")
         await page.goto(full_url)
         await page.wait_for_load_state("networkidle")
 
-        breed_links = await page.locator(f'a:has-text("{BREED.upper()}")').all()
+        breed_links = await page.locator(f'a:has-text("{BREED}")').all()
+        print(f"    Found {len(breed_links)} breed links for {BREED}")
         for breed_link in breed_links:
             show_url = await breed_link.get_attribute("href")
             if not show_url:
                 continue
             full_show_url = f"{BASE_URL}/app1/{show_url}"
-            print(f"Scraping {full_show_url}")
+            print(f"    Scraping {full_show_url}")
             await page.goto(full_show_url)
             text = await page.text_content("body")
 
@@ -82,15 +85,18 @@ async def login_and_scrape(page):
 async def run_scraper():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            http_credentials={"username": username, "password": password}
-        )
+        context = await browser.new_context()
         page = await context.new_page()
 
+        # Attempt login
+        await page.goto(f"{BASE_URL}/members/index.php")
         try:
-            await page.goto(f"{BASE_URL}/app1/champshows.php")
+            await page.fill('input[name="username"]', username)
+            await page.fill('input[name="password"]', password)
+            await page.click('input[type="submit"][value="Sign In"]')
+            await page.wait_for_load_state("networkidle")
         except Exception:
-            print("Login failed or page load failed. Dumping debug files...")
+            print("Login failed or not detected. Dumping HTML and screenshot...")
             await upload_debug_to_drive(page)
             await browser.close()
             return
