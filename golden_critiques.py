@@ -89,9 +89,9 @@ async def run_scraper():
         # Attempt login
         await page.goto(f"{BASE_URL}/members/index.php")
         try:
-            await page.fill('input[name="username"]')
-            await page.fill('input[name="password"]')
-            await page.click('input[type="submit"]')
+            await page.fill('input[name="username"]', username)
+            await page.fill('input[name="password"]', password)
+            await page.click('input[type="submit"][value="Sign In"]')
             await page.wait_for_load_state("networkidle")
         except Exception:
             print("Login failed or not detected. Dumping HTML and screenshot...")
