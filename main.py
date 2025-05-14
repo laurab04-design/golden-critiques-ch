@@ -1,7 +1,6 @@
 import os
-import asyncio
 from fastapi import FastAPI
-from golden_critiques import run_scraper, upload_to_drive
+from golden_critiques import run_scraper
 from drive_utils import upload_to_drive
 
 app = FastAPI()
@@ -13,8 +12,8 @@ def root():
 @app.get("/run")
 async def run():
     try:
-        await run_scraper()
-        upload_to_drive("golden_critiques.json")
+        await run_scraper()  # This must be async
+        await upload_to_drive("golden_critiques.json")  # This is async
         return {"status": "success", "message": "Scraper run completed and uploaded to Google Drive."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
