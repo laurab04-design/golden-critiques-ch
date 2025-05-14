@@ -2,7 +2,7 @@ import os
 import asyncio
 from fastapi import FastAPI
 from golden_critiques import run_scraper, upload_to_drive
-from drive_utils import upload_from_drive
+from drive_utils import upload_to_drive
 
 app = FastAPI()
 
