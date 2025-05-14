@@ -11,28 +11,6 @@ BREED = "RETRIEVER GOLDEN"
 RESULTS_FILE = "golden_critiques.json"
 BASE_URL = "https://www.ourdogs.co.uk"
 
-def upload_to_drive(filename: str, folder_name: str = "golden-critiques"):
-    creds_data = os.getenv("GOOGLE_SERVICE_ACCOUNT_BASE64")
-    if not creds_data:
-        print("No GOOGLE_SERVICE_ACCOUNT_BASE64 env var found.")
-        return
-    creds_json = base64.b64decode(creds_data).decode("utf-8")
-    creds_dict = json.loads(creds_json)
-
-    scope = ['https://www.googleapis.com/auth/drive']
-    credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    gauth = GoogleAuth()
-    gauth.credentials = credentials
-    drive = GoogleDrive(gauth)
-
-    folder_id = os.getenv("GDRIVE_FOLDER_ID")
-
-    file_metadata = {'title': filename, 'parents': [{'id': folder_id}]}
-    file = drive.CreateFile(file_metadata)
-    file.SetContentFile(filename)
-    file.Upload()
-    print(f"Uploaded {filename} to Google Drive folder '{folder_name}'")
-
 async def upload_debug_to_drive(page):
     html = await page.content()
     with open("debug_login.html", "w", encoding="utf-8") as f:
