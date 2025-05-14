@@ -88,6 +88,10 @@ async def run_scraper():
 
         # Attempt login
         await page.goto(f"{BASE_URL}/members/index.php")
+        html = await page.content()
+        with open('login_debug_dump.html","w") as f:
+            f.write(html)
+                  
         try:
             await page.fill('input[name="username"]', username)
             await page.fill('input[name="password"]', password)
