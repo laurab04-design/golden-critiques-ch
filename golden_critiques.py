@@ -1,6 +1,5 @@
 import os
 import json
-import base64
 import re
 from playwright.async_api import async_playwright
 from drive_utils import upload_to_drive
@@ -9,8 +8,8 @@ BREED = "RETRIEVER GOLDEN"
 RESULTS_FILE = "golden_critiques.json"
 BASE_URL = "https://www.ourdogs.co.uk"
 
-username = os.env("OURDOGS_USER")
-password = os.env("OURDOGS_PASS")
+username = os.getenv("OURDOGS_USER")
+password = os.getenv("OURDOGS_PASS")
 
 async def upload_debug_to_drive(page):
     html = await page.content()
@@ -88,10 +87,7 @@ async def run_scraper():
 
         # Attempt login
         await page.goto(f"{BASE_URL}/members/index.php")
-        html = await page.content()
-        with open('login_debug_dump.html","w") as f:
-            f.write(html)
-                  
+
         try:
             await page.fill('input[name="username"]', username)
             await page.fill('input[name="password"]', password)
