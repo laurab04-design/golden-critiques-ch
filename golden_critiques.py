@@ -3,9 +3,7 @@ import json
 import base64
 import re
 from playwright.async_api import async_playwright
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
-from oauth2client.service_account import ServiceAccountCredentials
+from drive_utils import upload_to_drive
 
 BREED = "RETRIEVER GOLDEN"
 RESULTS_FILE = "golden_critiques.json"
@@ -16,8 +14,8 @@ async def upload_debug_to_drive(page):
     with open("debug_login.html", "w", encoding="utf-8") as f:
         f.write(html)
     await page.screenshot(path="debug_login.png", full_page=True)
-    upload_to_drive("debug_login.html")
-    upload_to_drive("debug_login.png")
+    upload_to_drive("debug_login.html", "text/html")
+    upload_to_drive("debug_login.png", "image/png")
     print("Uploaded login debug files.")
 
 async def login_and_scrape(page):
@@ -114,6 +112,5 @@ async def run_scraper():
         with open(RESULTS_FILE, "w", encoding="utf-8") as f:
             json.dump(combined, f, indent=2)
 
-        upload_to_drive(RESULTS_FILE)
         await browser.close()
         print("Scraping complete.")
