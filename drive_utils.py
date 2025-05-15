@@ -1,55 +1,52 @@
 import os
 import json
 import base64
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from pydrive.auth import GoogleAuth
+from pydrive.drive import GoogleDrive
+from oauth2client.service_account import ServiceAccountCredentials
 
-# Decode and write credentials from env
-creds_b64 = os.environ.get("GOOGLE_SERVICE_ACCOUNT_BASE64")
-if creds_b64:
-    with open("credentials.json", "wb") as f:
-        f.write(base64.b64decode(creds_b64))
-
-# Build Drive service
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-credentials = service_account.Credentials.from_service_account_file(
-    "credentials.json", scopes=SCOPES
-)
-drive_service = build("drive", "v3", credentials=credentials)
-
-def upload_to_drive(local_path, mime_type):
-    fname = os.path.basename(local_path)
-    folder_id = os.environ.get("GDRIVE_FOLDER_ID")
-
-    if not os.path.exists(local_path):
-        print(f"[ERROR] File not found for upload: {local_path}")
+def upload_to_drive(filename: str, mime_type: str = None, folder_name: str = "golden-critiques"):
+    creds_data = os.getenv("GOOGLE_SERVICE_ACCOUNT_BASE64")
+    if not creds_data:
+        print("GOOGLE_SERVICE_ACCOUNT_BASE64 not found in environment.")
         return
 
-    if not folder_id:
-        print("[ERROR] GDRIVE_FOLDER_ID is not set.")
-        return
-
+    # Decode base64 and load JSON
     try:
-        res = drive_service.files().list(
-            q=f"name='{fname}' and trashed=false and '{folder_id}' in parents",
-            spaces="drive",
-            fields="files(id, name)"
-        ).execute()
-
-        if res["files"]:
-            file_id = res["files"][0]["id"]
-            drive_service.files().update(
-                fileId=file_id,
-                media_body=MediaFileUpload(local_path, mimetype=mime_type)
-            ).execute()
-            print(f"[INFO] Updated {fname} in Drive.")
-        else:
-            file = drive_service.files().create(
-                body={"name": fname, "parents": [folder_id]},
-                media_body=MediaFileUpload(local_path, mimetype=mime_type),
-                fields="id, webViewLink"
-            ).execute()
-            print(f"[INFO] Uploaded {fname}. View: {file['webViewLink']}")
+        creds_json = base64.b64decode(creds_data + "==").decode("utf-8")
+        creds_dict = json.loads(creds_json)
     except Exception as e:
-        print(f"[ERROR] Failed to upload {fname}: {e}")
+        print(f"Failed to decode credentials: {e}")
+        return
+
+    # Authenticate
+    scope = ['https://www.googleapis.com/auth/drive']
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    gauth = GoogleAuth()
+    gauth.credentials = credentials
+    drive = GoogleDrive(gauth)
+
+    # Find or create folder
+    folder_id = None
+    query = f"title='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    folder_list = drive.ListFile({'q': query}).GetList()
+    if folder_list:
+        folder_id = folder_list[0]['id']
+    else:
+        folder_metadata = {
+            'title': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        folder = drive.CreateFile(folder_metadata)
+        folder.Upload()
+        folder_id = folder['id']
+
+    # Upload file
+    file_metadata = {'title': os.path.basename(filename), 'parents': [{'id': folder_id}]}
+    if mime_type:
+        file_metadata['mimeType'] = mime_type
+
+    file = drive.CreateFile(file_metadata)
+    file.SetContentFile(filename)
+    file.Upload()
+    print(f"Uploaded {filename} to Google Drive folder '{folder_name}'")
