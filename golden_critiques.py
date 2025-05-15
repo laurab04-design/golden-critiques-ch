@@ -29,9 +29,10 @@ async def run_scraper():
         try:
             # Login
             await page.goto(f"{BASE_URL}/members/index.php")
-            await page.fill('input[name="username"]', username)
-            await page.fill('input[name="password"]', password)
-            await page.click('input[type="submit"]')
+            await page.wait_for_selector('form[name="loginform"] input[name="username"]')
+            await page.fill('form[name="loginform"] input[name="username"]', username)
+            await page.fill('form[name="loginform"] input[name="password"]', password)
+            await page.click('form[name="loginform"] input[type="submit"]')
             await page.wait_for_load_state("networkidle")
         except Exception:
             html = await page.content()
