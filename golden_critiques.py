@@ -26,13 +26,13 @@ async def run_scraper():
         context = await browser.new_context()
         page = await context.new_page()
 
-        # Login
-        await page.goto(f"{BASE_URL}/members/index.php")
-        await page.fill('input[name="username"]', username)
-        await page.fill('input[name="password"]', password)
-        await page.click('input[type="submit"]')
-        await page.wait_for_load_state("networkidle")
-        
+        try:
+            # Login
+            await page.goto(f"{BASE_URL}/members/index.php")
+            await page.fill('input[name="username"]', username)
+            await page.fill('input[name="password"]', password)
+            await page.click('input[type="submit"]')
+            await page.wait_for_load_state("networkidle")
         except Exception:
             html = await page.content()
             with open("debug_login.html", "w", encoding="utf-8") as f:
