@@ -63,9 +63,9 @@ async def run_scraper():
                 await page.goto(full_url)
                 text = await page.text_content("body")
 
-                show_match = re.search(r"Championship Show\s*-\s*(.*?)\s*\n", text)
+                title = await page.title()
+                show = title.split(" - ISSUE")[0].strip() if " - ISSUE" in title else "Unknown Show"
                 judge_match = re.search(r"\n([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\.\s*$", text.strip())
-                show = show_match.group(1).strip() if show_match else "Unknown Show"
                 judge = judge_match.group(1).strip() if judge_match else "Unknown"
                 year_match = re.search(r"(20\d{2})", show)
                 year = int(year_match.group(1)) if year_match else "Unknown"
