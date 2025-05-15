@@ -23,27 +23,10 @@ YEARLY_URLS = [
 async def run_scraper():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
+        context = await browser.new_context(
+            http_credentials={"username": username, "password": password}
+        )
         page = await context.new_page()
-
-        try:
-            # Login
-            await page.goto(f"{BASE_URL}/members/index.php")
-            await page.wait_for_selector('form[name="loginform"] input[name="username"]')
-            await page.fill('form[name="loginform"] input[name="username"]', username)
-            await page.fill('form[name="loginform"] input[name="password"]', password)
-            await page.click('form[name="loginform"] input[type="submit"]')
-            await page.wait_for_load_state("networkidle")
-        except Exception:
-            html = await page.content()
-            with open("debug_login.html", "w", encoding="utf-8") as f:
-                f.write(html)
-            await page.screenshot(path="debug_login.png", full_page=True)
-            upload_to_drive("debug_login.html", "text/html")
-            upload_to_drive("debug_login.png", "image/png")
-            print("Login failed. Uploaded debug files.")
-            await browser.close()
-            return
 
         seen_links = set()
         results = []
