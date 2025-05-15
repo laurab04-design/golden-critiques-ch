@@ -12,7 +12,6 @@ username = os.getenv("OURDOGS_USER")
 password = os.getenv("OURDOGS_PASS")
 
 YEARLY_URLS = [
-    "https://www.ourdogs.co.uk/app1/formextraca.php?query=Retriever+golden",
     "https://www.ourdogs.co.uk/app1/form24ca.php?query=Retriever+golden",
     "https://www.ourdogs.co.uk/app1/form23ca.php?query=Retriever+golden",
     "https://www.ourdogs.co.uk/app1/form22ca.php?query=Retriever+golden",
