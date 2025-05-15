@@ -31,7 +31,7 @@ async def run_scraper():
             await page.goto(f"{BASE_URL}/members/index.php")
             await page.fill('input[name="username"]', username)
             await page.fill('input[name="password"]', password)
-            await page.click('input[type="submit"][value="Sign In"]')
+            await page.click('input[type="submit"]')
             await page.wait_for_load_state("networkidle")
         except Exception:
             html = await page.content()
@@ -63,9 +63,9 @@ async def run_scraper():
                 await page.goto(full_url)
                 text = await page.text_content("body")
 
-                title = await page.title()
-                show = title.split(" - ISSUE")[0].strip() if " - ISSUE" in title else "Unknown Show"
+                show_match = re.search(r"SHOW NAME:\s*(.*?)\s*\n", text)
                 judge_match = re.search(r"\n([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\.\s*$", text.strip())
+                show = show_match.group(1).strip() if show_match else "Unknown Show"
                 judge = judge_match.group(1).strip() if judge_match else "Unknown"
                 year_match = re.search(r"(20\d{2})", show)
                 year = int(year_match.group(1)) if year_match else "Unknown"
