@@ -4,7 +4,7 @@ import re
 from playwright.async_api import async_playwright
 from drive_utils import upload_to_drive
 
-BREED = "RETRIEVER (GOLDEN)"
+BREED = "RETRIEVER GOLDEN"
 RESULTS_FILE = "golden_critiques.json"
 BASE_URL = "https://www.ourdogs.co.uk"
 username = os.getenv("OURDOGS_USER")
