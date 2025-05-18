@@ -1,4 +1,6 @@
 import os
+import playwright.__main__ as pwmain
+pwmain.main(["install", "chromium"])
 from fastapi import FastAPI
 from golden_critiques import run_scraper
 from drive_utils import upload_to_drive
