@@ -26,6 +26,54 @@ def extract_showname_from_url(url):
     showname_raw = qs.get("showname", ["Unknown"])[0]
     return showname_raw.replace("*", " ").strip()
 
+def parse_critiques(text):
+    text = text.encode("latin1").decode("utf-8", errors="ignore")
+
+    issue_match = re.search(r"Issue:(\d{2}/\d{2}/\d{4})", text)
+    show_match = re.search(r"Issue:\d{2}/\d{2}/\d{4}\s+([A-Z\s\-']+20\d{2})", text)
+    breed_match = re.search(r"\n([A-Z ]*RETRIEVER GOLDEN)", text)
+
+    issue_date = issue_match.group(1) if issue_match else "Unknown"
+    show = show_match.group(1).strip() if show_match else "Unknown Show"
+    breed = breed_match.group(1).strip() if breed_match else "Unknown Breed"
+
+    results = []
+
+    class_blocks = re.findall(
+        r"\n([A-Z]{2,3})\s*\((\d+)[,\.]\s*(\d+)\)\s*(.*?)(?=\n[A-Z]{2,3}\s*\(|\Z)",
+        text,
+        re.DOTALL
+    )
+
+    for class_code, entries, absents, block in class_blocks:
+        placements = re.findall(
+            r"(\d)\s+([A-Za-z’'`&.\s]+)’s\s+([A-Za-z0-9 \-’'`&.]+?),?\s*(.*?)(?=\n\d|\n[A-Z]{2,3}\s*\(|\Z)",
+            block,
+            re.DOTALL
+        )
+
+        entry = {
+            "show": show,
+            "date": issue_date,
+            "breed": breed,
+            "class": class_code.strip(),
+            "entries": int(entries),
+            "absent": int(absents),
+            "placements": []
+        }
+
+        for place, owner, dog, critique in placements:
+            entry["placements"].append({
+                "place": int(place),
+                "owner": owner.strip(),
+                "dog": dog.strip(),
+                "critique": critique.strip() if int(place) in [1, 2] else ""
+            })
+
+        results.append(entry)
+
+    return results
+
 async def save_progress(results):
     with open(RESULTS_FILE, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
@@ -40,11 +88,10 @@ async def run_scraper():
         )
         page = await context.new_page()
 
-        # Load existing results to avoid duplicates
         try:
             with open(RESULTS_FILE, "r", encoding="utf-8") as f:
                 existing = json.load(f)
-            seen = set((e["show"], e["year"], e["class"]) for e in existing)
+            seen = set((e["show"], e["date"], e["class"]) for e in existing)
         except FileNotFoundError:
             existing = []
             seen = set()
@@ -58,77 +105,42 @@ async def run_scraper():
             await page.wait_for_load_state("networkidle")
 
             try:
-                await page.wait_for_selector('a[href*="showsextra.php"]', timeout=60000)
-                links = await page.locator('a[href*="showsextra.php"]').all()
+                all_links = await page.locator("a").all()
+                links = []
+                for link in all_links:
+                    href = await link.get_attribute("href")
+                    if href and "showsextra.php" in href:
+                        links.append(href)
             except Exception as e:
                 print(f"Failed to find show links on {url}: {e}")
                 continue
 
-            for link in links:
-                href = await link.get_attribute("href")
-                if not href or href in seen_links:
+            for index, href in enumerate(links):
+                if href in seen_links:
                     continue
                 seen_links.add(href)
                 full_url = urllib.parse.urljoin(BASE_URL + '/', href)
-                print(f"Scraping {full_url}")
+                print(f"Fetching {full_url}")
                 await page.goto(full_url)
-                text = await page.text_content("body")
+                await page.wait_for_load_state("domcontentloaded")
 
-                # Show name extraction
-                show_match = re.search(r"SHOW NAME:\s*(.*?)\s*\n", text)
-                if show_match:
-                    show = show_match.group(1).strip()
-                else:
-                    show = extract_showname_from_url(full_url)
+                text = await page.content()
+                if not text:
+                    print(f"Empty page at {full_url}")
+                    continue
 
-                # Judge extraction
-                judge_match = re.search(
-                    r"\n([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\.\s*\n\nPlease note", text, re.DOTALL
-                )
-                if not judge_match:
-                    judge_match = re.search(
-                        r"\n([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\.\s*$",
-                        text.strip()
-                    )
-                judge = judge_match.group(1).strip() if judge_match else "Unknown"
+                os.makedirs("raw_show_pages", exist_ok=True)
+                filename = f"raw_show_pages/show_{index + 1}.html"
+                with open(filename, "w", encoding="utf-8") as f:
+                    f.write(text)
 
-                year_match = re.search(r"(20\d{2})", show)
-                year = int(year_match.group(1)) if year_match else "Unknown"
-
-                classes = re.findall(
-                    r"\n([A-Z]{2,4})\s*\((\d+),\s*(\d+)\)\s*(.*?)\n(?=[A-Z]{2,4}|\Z)",
-                    text,
-                    re.DOTALL
-                )
-                for class_code, entries, absents, block in classes:
-                    placements = re.findall(
-                        r"(\d)\s+([A-Za-z’'`&.\s]+)’s\s+(.*?)\.(.*?)?(?=\n\d|\n[A-Z]{2,4}|\Z)",
-                        block,
-                        re.DOTALL
-                    )
-                    entry = {
-                        "show": show,
-                        "year": year,
-                        "judge": judge,
-                        "class": class_code.strip(),
-                        "entries": int(entries),
-                        "absent": int(absents),
-                        "placements": []
-                    }
-                    for place, owner, dog, critique in placements:
-                        entry["placements"].append({
-                            "place": int(place),
-                            "owner": owner.strip(),
-                            "dog": dog.strip(),
-                            "critique": critique.strip() if int(place) in [1, 2] else ""
-                        })
-
-                    # Skip duplicates for each class entry
-                    if (entry["show"], entry["year"], entry["class"]) not in seen:
+                parsed = parse_critiques(text)
+                for entry in parsed:
+                    key = (entry["show"], entry["date"], entry["class"])
+                    if key not in seen:
                         results.append(entry)
-                        seen.add((entry["show"], entry["year"], entry["class"]))
+                        seen.add(key)
 
-                # Save progress after each show scraped
                 await save_progress(results)
 
         await browser.close()
