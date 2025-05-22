@@ -1,13 +1,9 @@
 import os
-import json
-import re
 import urllib.parse
 from pathlib import Path
 from playwright.async_api import async_playwright
 from drive_utils import upload_to_drive
 
-BREED = "RETRIEVER GOLDEN"
-RESULTS_FILE = "golden_critiques.json"
 BASE_URL = "https://www.ourdogs.co.uk"
 username = os.getenv("OURDOGS_USER")
 password = os.getenv("OURDOGS_PASS")
@@ -21,11 +17,11 @@ YEARLY_URLS = [
     "https://www.ourdogs.co.uk/app1/form19c.php?query=Retriever+golden",
 ]
 
-async def save_progress(results):
-    with open(RESULTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
-    upload_to_drive(RESULTS_FILE, "application/json")
-    print(f"Progress saved: {len(results)} entries")
+def extract_showname_from_url(url):
+    parsed = urllib.parse.urlparse(url)
+    qs = urllib.parse.parse_qs(parsed.query)
+    showname_raw = qs.get("showname", ["Unknown"])[0]
+    return showname_raw.replace("*", " ").strip().replace(" ", "_")
 
 async def run_scraper():
     async with async_playwright() as p:
@@ -35,16 +31,8 @@ async def run_scraper():
         )
         page = await context.new_page()
 
-        try:
-            with open(RESULTS_FILE, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-            seen = set(e["url"] for e in existing)
-        except FileNotFoundError:
-            existing = []
-            seen = set()
-
-        results = existing.copy()
         seen_links = set()
+        os.makedirs("raw_show_text", exist_ok=True)
 
         for url in YEARLY_URLS:
             print(f"Processing index page: {url}")
@@ -62,34 +50,25 @@ async def run_scraper():
                 print(f"Failed to find show links on {url}: {e}")
                 continue
 
-            for index, href in enumerate(links):
+            for href in links:
                 if href in seen_links:
                     continue
                 seen_links.add(href)
-                full_url = urllib.parse.urljoin(BASE_URL + '/', href)
+
+                full_url = urllib.parse.urljoin(BASE_URL + "/", href)
+                showname = extract_showname_from_url(full_url)
+                filename = f"raw_show_text/{showname}.txt"
+
                 print(f"Fetching {full_url}")
-                await page.goto(full_url)
-                await page.wait_for_load_state("domcontentloaded")
-
-                text = await page.content()
-                if not text:
-                    print(f"Empty page at {full_url}")
-                    continue
-
-                os.makedirs("raw_show_pages", exist_ok=True)
-                filename = f"raw_show_pages/{Path(href).stem}_{index + 1}.html"
-                with open(filename, "w", encoding="utf-8") as f:
-                    f.write(text)
-
-                main_text = re.split(r"CLICK HERE TO GO TO THE CHAMPIONSHIP SHOW INDEX", text, maxsplit=1)[0]
-                main_text = re.sub(r"<[^>]+>", "", main_text)
-                main_text = main_text.replace("\xa0", " ").replace("Ã¢â¬â¢", "â").strip()
-
-                if full_url not in seen:
-                    results.append({"url": full_url, "text": main_text})
-                    seen.add(full_url)
-
-                await save_progress(results)
+                try:
+                    await page.goto(full_url)
+                    await page.wait_for_load_state("domcontentloaded")
+                    text = await page.locator("body").inner_text()
+                    with open(filename, "w", encoding="utf-8") as f:
+                        f.write(text)
+                    print(f"Saved text to {filename}")
+                except Exception as e:
+                    print(f"Failed to fetch or save {full_url}: {e}")
 
         await browser.close()
-        print("Scraping complete.")
+        print("Text scraping complete.")
