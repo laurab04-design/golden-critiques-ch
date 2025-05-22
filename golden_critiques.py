@@ -67,6 +67,7 @@ async def run_scraper():
                     with open(filename, "w", encoding="utf-8") as f:
                         f.write(text)
                     print(f"Saved text to {filename}")
+                    upload_to_drive(filename, "text/plain", "golden-critiques")
                 except Exception as e:
                     print(f"Failed to fetch or save {full_url}: {e}")
 
