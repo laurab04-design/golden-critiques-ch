@@ -97,4 +97,5 @@ def download_from_drive(filename, folder_name="golden-critiques"):
     while not done:
         _, done = downloader.next_chunk()
 
+    print(f"Downloaded {filename} to {local_path}")
     return local_path
