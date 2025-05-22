@@ -4,6 +4,7 @@ import re
 import urllib.parse
 from playwright.async_api import async_playwright
 from drive_utils import upload_to_drive, download_from_drive
+from pathlib import Path
 
 BREED = "RETRIEVER GOLDEN"
 RESULTS_FILE = "golden_critiques.json"
@@ -53,7 +54,7 @@ def parse_critiques(text, valid_classes):
 
     for class_code, entries, absents, block in class_blocks:
         class_code = class_code.strip()
-        if class_code not in valid_classes:
+        if class_code.upper().strip() not in valid_classes:
             print(f"Skipping invalid class code: {class_code}")
             continue
 
