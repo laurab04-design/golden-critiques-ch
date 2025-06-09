@@ -90,14 +90,14 @@ def process_all_files(input_folder, existing_data=None):
 
     return all_dogs
 
-    # Deduplicate critiques per dog by identical (critique, source) combo
+    # Deduplicate critiques per dog by exact critique text only (regardless of class/source)
     for dog, entries in all_dogs.items():
-        seen = set()
+        seen_critique_texts = set()
         deduped = []
         for entry in entries:
-            key = (entry["critique"], entry.get("source", ""))
-            if key not in seen:
-                seen.add(key)
+            text = entry.get("critique", "").strip()
+            if text and text not in seen_critique_texts:
+                seen_critique_texts.add(text)
                 deduped.append(entry)
         all_dogs[dog] = deduped
 
