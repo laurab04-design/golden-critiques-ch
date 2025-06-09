@@ -3,6 +3,7 @@ import os
 import hashlib
 import urllib.parse
 from pathlib import Path
+from collections import defaultdict
 from playwright.async_api import async_playwright
 from drive_utils import upload_to_drive, deduplicate_drive_folder
 
@@ -25,13 +26,6 @@ def extract_showname_from_url(url):
     showname_raw = qs.get("showname", ["Unknown"])[0]
     return showname_raw.replace("*", " ").strip().replace(" ", "_")
 
-def compute_md5(file_path):
-    hash_md5 = hashlib.md5()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hash_md5.update(chunk)
-    return hash_md5.hexdigest()
-
 async def run_scraper():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -41,15 +35,15 @@ async def run_scraper():
         page = await context.new_page()
 
         seen_links = set()
-        seen_files = set()  # (filename, md5)
+        seen_files = set()  # (filename, size)
         os.makedirs("raw_show_text", exist_ok=True)
 
         for url in YEARLY_URLS:
             print(f"Processing index page: {url}")
-            try:
-                await page.goto(url)
-                await page.wait_for_load_state("networkidle")
+            await page.goto(url)
+            await page.wait_for_load_state("networkidle")
 
+            try:
                 all_links = await page.locator("a").all()
                 links = []
                 for link in all_links:
@@ -78,8 +72,8 @@ async def run_scraper():
                         f.write(text)
                     print(f"Saved text to {filename}")
 
-                    file_md5 = compute_md5(filename)
-                    file_key = (os.path.basename(filename), file_md5)
+                    file_size = os.path.getsize(filename)
+                    file_key = (os.path.basename(filename), file_size)
                     if file_key in seen_files:
                         print(f"[SKIPPED] Already uploaded in this session: {file_key[0]}")
                         continue
@@ -88,11 +82,10 @@ async def run_scraper():
                     seen_files.add(file_key)
 
                 except Exception as e:
-                    print(f"[ERROR] Failed to fetch or save {full_url}: {e}")
-                    continue
+                    print(f"Failed to fetch or save {full_url}: {e}")
 
         await browser.close()
-        print("[SCRAPER] Completed all shows.")
+        print("Text scraping complete.")
 
 def main():
     import asyncio
