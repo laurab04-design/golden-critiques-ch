@@ -121,7 +121,7 @@ def deduplicate_drive_folder(folder_name: str = "golden-critiques"):
         response = service.files().list(
             q=f"'{folder_id}' in parents and trashed=false and mimeType='text/plain'",
             spaces='drive',
-            fields='nextPageToken, files(id, name, md5Checksum)',
+            fields='nextPageToken, files(id, name, size)',
             pageToken=page_token
         ).execute()
         files.extend(response.get("files", []))
@@ -129,23 +129,28 @@ def deduplicate_drive_folder(folder_name: str = "golden-critiques"):
         if not page_token:
             break
 
-    # Group by (name, md5)
+    # Group by (name, size)
     file_map = defaultdict(list)
     for f in files:
-        if 'md5Checksum' in f:
-            key = (f['name'], f['md5Checksum'])
-            file_map[key].append(f['id'])
+        name = f.get("name")
+        size = f.get("size")
+        if name and size:
+            key = (name, size)
+            file_map[key].append(f["id"])
 
     # Delete all but one in each group
     deleted_count = 0
     for key, file_ids in file_map.items():
         if len(file_ids) > 1:
             for dup_id in file_ids[1:]:
-                service.files().delete(fileId=dup_id).execute()
-                deleted_count += 1
-                print(f"[DEDUPLICATED] Deleted duplicate: {key[0]}")
+                try:
+                    service.files().delete(fileId=dup_id).execute()
+                    deleted_count += 1
+                    print(f"[DEDUPLICATED] Deleted duplicate: {key[0]} (size {key[1]})")
+                except Exception as e:
+                    print(f"[ERROR] Failed to delete file {dup_id}: {e}")
 
-    print(f"[DONE] Removed {deleted_count} duplicate files from '{folder_name}'.")
+    print(f"[DONE] Removed {deleted_count} duplicate files from '{folder_name}' using name + size.")
 
 
 def download_from_drive(filename, folder_name="golden-critiques"):
