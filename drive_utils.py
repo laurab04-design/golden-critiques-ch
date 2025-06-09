@@ -2,13 +2,14 @@ import os
 import io
 import json
 import base64
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
-from oauth2client.service_account import ServiceAccountCredentials
+import hashlib
+from pathlib import Path
+from collections import defaultdict
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+
 
 def upload_to_drive(filename: str, mime_type: str = None, folder_name: str = "golden-critiques"):
     creds_data = os.getenv("GOOGLE_SERVICE_ACCOUNT_BASE64")
@@ -16,7 +17,7 @@ def upload_to_drive(filename: str, mime_type: str = None, folder_name: str = "go
         print("GOOGLE_SERVICE_ACCOUNT_BASE64 not found in environment.")
         return
 
-    # Decode base64 and load JSON
+    # Decode credentials
     try:
         creds_json = base64.b64decode(creds_data + "==").decode("utf-8")
         creds_dict = json.loads(creds_json)
@@ -24,37 +25,128 @@ def upload_to_drive(filename: str, mime_type: str = None, folder_name: str = "go
         print(f"Failed to decode credentials: {e}")
         return
 
-    # Authenticate
-    scope = ['https://www.googleapis.com/auth/drive']
-    credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    gauth = GoogleAuth()
-    gauth.credentials = credentials
-    drive = GoogleDrive(gauth)
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_dict, scopes=["https://www.googleapis.com/auth/drive"]
+    )
+    service = build("drive", "v3", credentials=credentials)
 
-    # Find or create folder
+    # Get or create the folder
     folder_id = None
-    query = f"title='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    folder_list = drive.ListFile({'q': query}).GetList()
-    if folder_list:
-        folder_id = folder_list[0]['id']
+    folder_res = service.files().list(
+        q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}' and trashed=false",
+        spaces='drive',
+        fields='files(id, name)'
+    ).execute()
+    folders = folder_res.get("files", [])
+    if folders:
+        folder_id = folders[0]["id"]
     else:
         folder_metadata = {
-            'title': folder_name,
-            'mimeType': 'application/vnd.google-apps.folder'
+            "name": folder_name,
+            "mimeType": "application/vnd.google-apps.folder"
         }
-        folder = drive.CreateFile(folder_metadata)
-        folder.Upload()
-        folder_id = folder['id']
+        folder = service.files().create(body=folder_metadata, fields="id").execute()
+        folder_id = folder["id"]
 
-    # Upload file
-    file_metadata = {'title': os.path.basename(filename), 'parents': [{'id': folder_id}]}
-    if mime_type:
-        file_metadata['mimeType'] = mime_type
+    # Compute local file's MD5
+    def compute_md5(file_path):
+        hash_md5 = hashlib.md5()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_md5.update(chunk)
+        return hash_md5.hexdigest()
 
-    file = drive.CreateFile(file_metadata)
-    file.SetContentFile(filename)
-    file.Upload()
-    print(f"Uploaded {filename} to Google Drive folder '{folder_name}'")
+    local_md5 = compute_md5(filename)
+    filename_only = Path(filename).name
+
+    # Look for matching name + content in the folder
+    dup_query = (
+        f"name='{filename_only}' and '{folder_id}' in parents and trashed=false"
+    )
+    existing_files = service.files().list(
+        q=dup_query,
+        fields="files(id, md5Checksum, name)"
+    ).execute().get("files", [])
+
+    for existing in existing_files:
+        remote_md5 = existing.get("md5Checksum")
+        if remote_md5 == local_md5:
+            print(f"[SKIPPED] Identical file already exists in Drive: {filename_only}")
+            return  # Don't upload
+
+    # Upload if no exact match found
+    file_metadata = {
+        'name': filename_only,
+        'parents': [folder_id]
+    }
+    media = MediaFileUpload(filename, mimetype=mime_type)
+    service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    print(f"[UPLOADED] {filename_only} uploaded to Google Drive folder '{folder_name}'")
+
+
+def deduplicate_drive_folder(folder_name: str = "golden-critiques"):
+    creds_data = os.getenv("GOOGLE_SERVICE_ACCOUNT_BASE64")
+    if not creds_data:
+        print("GOOGLE_SERVICE_ACCOUNT_BASE64 not found in environment.")
+        return
+
+    try:
+        creds_json = base64.b64decode(creds_data + "==").decode("utf-8")
+        creds_dict = json.loads(creds_json)
+    except Exception as e:
+        print(f"Failed to decode credentials: {e}")
+        return
+
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_dict, scopes=["https://www.googleapis.com/auth/drive"]
+    )
+    service = build("drive", "v3", credentials=credentials)
+
+    # Get folder ID
+    folder_res = service.files().list(
+        q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}' and trashed=false",
+        spaces='drive',
+        fields='files(id, name)'
+    ).execute()
+    folders = folder_res.get("files", [])
+    if not folders:
+        print(f"[ERROR] Folder '{folder_name}' not found.")
+        return
+    folder_id = folders[0]["id"]
+
+    # Get all non-trashed .txt files in the folder
+    files = []
+    page_token = None
+    while True:
+        response = service.files().list(
+            q=f"'{folder_id}' in parents and trashed=false and mimeType='text/plain'",
+            spaces='drive',
+            fields='nextPageToken, files(id, name, md5Checksum)',
+            pageToken=page_token
+        ).execute()
+        files.extend(response.get("files", []))
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            break
+
+    # Group by (name, md5)
+    file_map = defaultdict(list)
+    for f in files:
+        if 'md5Checksum' in f:
+            key = (f['name'], f['md5Checksum'])
+            file_map[key].append(f['id'])
+
+    # Delete all but one in each group
+    deleted_count = 0
+    for key, file_ids in file_map.items():
+        if len(file_ids) > 1:
+            for dup_id in file_ids[1:]:
+                service.files().delete(fileId=dup_id).execute()
+                deleted_count += 1
+                print(f"[DEDUPLICATED] Deleted duplicate: {key[0]}")
+
+    print(f"[DONE] Removed {deleted_count} duplicate files from '{folder_name}'.")
+
 
 def download_from_drive(filename, folder_name="golden-critiques"):
     creds_data = os.getenv("GOOGLE_SERVICE_ACCOUNT_BASE64")
