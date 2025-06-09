@@ -2,10 +2,10 @@ import os
 import re
 import json
 from ftfy import fix_text
-from golden_judges_scraper import upload_to_drive
+from drive_utils import upload_to_drive
 
-INPUT_FOLDER = "golden-critiques"  # Local folder of input .txt files
-OUTPUT_FILE = "golden_critiques_by_dog.json"
+INPUT_FOLDER = "golden-critiques"
+OUTPUT_FILE = os.path.join(INPUT_FOLDER, "golden_critiques_by_dog.json")
 
 def extract_critique_text(text):
     text = fix_text(text)
@@ -15,7 +15,7 @@ def extract_critique_text(text):
         return None
     return text[start + len("RETRIEVER GOLDEN"):end].strip()
 
-def extract_dog_critiques(critique_text):
+def extract_dog_critiques(critique_text, source_file):
     dog_critiques = {}
     class_blocks = re.split(r'\n?(?=(?:[A-Z]{1,4}|[A-Z]{2,4} \d)[ \n])', critique_text)
 
@@ -40,7 +40,8 @@ def extract_dog_critiques(critique_text):
                         dog = fix_text(dog.strip())
                         dog_critiques.setdefault(dog, []).append({
                             "class": class_header,
-                            "critique": buffer.strip()
+                            "critique": buffer.strip(),
+                            "source": source_file
                         })
                     buffer = ""
                 current_pos = chunk
@@ -54,30 +55,63 @@ def extract_dog_critiques(critique_text):
                 dog = fix_text(dog.strip())
                 dog_critiques.setdefault(dog, []).append({
                     "class": class_header,
-                    "critique": buffer.strip()
+                    "critique": buffer.strip(),
+                    "source": source_file
                 })
 
     return dog_critiques
 
-def process_all_files(input_folder):
-    all_dogs = {}
+def process_all_files(input_folder, existing_data=None):
+    all_dogs = existing_data or {}
+
+    already_processed_files = set()
+    for entries in all_dogs.values():
+        for entry in entries:
+            if "source" in entry:
+                already_processed_files.add(entry["source"])
+
     for filename in os.listdir(input_folder):
-        if not filename.endswith(".txt"):
+        if not filename.lower().endswith(".txt"):
             continue
+        if filename in already_processed_files:
+            print(f"[SKIP] Already processed {filename}")
+            continue
+
         filepath = os.path.join(input_folder, filename)
         with open(filepath, "r", encoding="utf-8") as f:
             raw_text = fix_text(f.read())
         extracted = extract_critique_text(raw_text)
         if not extracted:
+            print(f"[SKIP] No retrievable block in {filename}")
             continue
-        dog_critiques = extract_dog_critiques(extracted)
+        dog_critiques = extract_dog_critiques(extracted, source_file=filename)
         for dog, entries in dog_critiques.items():
             all_dogs.setdefault(dog, []).extend(entries)
+
     return all_dogs
 
+    # Deduplicate critiques per dog by identical (critique, source) combo
+    for dog, entries in all_dogs.items():
+        seen = set()
+        deduped = []
+        for entry in entries:
+            key = (entry["critique"], entry.get("source", ""))
+            if key not in seen:
+                seen.add(key)
+                deduped.append(entry)
+        all_dogs[dog] = deduped
+
 if __name__ == "__main__":
-    data = process_all_files(INPUT_FOLDER)
+    if os.path.exists(OUTPUT_FILE):
+        with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
+            existing_data = json.load(f)
+    else:
+        existing_data = {}
+
+    data = process_all_files(INPUT_FOLDER, existing_data=existing_data)
+
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+
     print(f"Extracted critiques saved to {OUTPUT_FILE}")
-    upload_to_drive(OUTPUT_FILE, folder_id=os.getenv("GDRIVE_FOLDER_ID"))
+    upload_to_drive(OUTPUT_FILE, folder_name="golden-critiques")
