@@ -1,3 +1,4 @@
+
 import os
 import hashlib
 import urllib.parse
@@ -45,10 +46,10 @@ async def run_scraper():
 
         for url in YEARLY_URLS:
             print(f"Processing index page: {url}")
-            await page.goto(url)
-            await page.wait_for_load_state("networkidle")
-
             try:
+                await page.goto(url)
+                await page.wait_for_load_state("networkidle")
+
                 all_links = await page.locator("a").all()
                 links = []
                 for link in all_links:
@@ -87,10 +88,11 @@ async def run_scraper():
                     seen_files.add(file_key)
 
                 except Exception as e:
-                    print(f"Failed to fetch or save {full_url}: {e}")
+                    print(f"[ERROR] Failed to fetch or save {full_url}: {e}")
+                    continue
 
         await browser.close()
-        print("Text scraping complete.")
+        print("[SCRAPER] Completed all shows.")
 
 def main():
     import asyncio
