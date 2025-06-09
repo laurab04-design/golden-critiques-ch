@@ -4,7 +4,7 @@ import json
 from ftfy import fix_text
 from golden_judges_scraper import upload_to_drive
 
-INPUT_FOLDER = "golden-critiques"  # Local folder of input .json files
+INPUT_FOLDER = "golden-critiques"  # Local folder of input .txt files
 OUTPUT_FILE = "golden_critiques_by_dog.json"
 
 def extract_critique_text(text):
@@ -62,7 +62,7 @@ def extract_dog_critiques(critique_text):
 def process_all_files(input_folder):
     all_dogs = {}
     for filename in os.listdir(input_folder):
-        if not filename.endswith(".json"):
+        if not filename.endswith(".txt"):
             continue
         filepath = os.path.join(input_folder, filename)
         with open(filepath, "r", encoding="utf-8") as f:
