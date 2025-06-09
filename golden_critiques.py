@@ -2,10 +2,7 @@ import os
 import urllib.parse
 from pathlib import Path
 from playwright.async_api import async_playwright
-from drive_utils import upload_to_drive
-from drive_utils import deduplicate_drive_folder
-
-deduplicate_drive_folder("golden-critiques")
+from drive_utils import upload_to_drive, deduplicate_drive_folder
 
 BASE_URL = "https://www.ourdogs.co.uk"
 username = os.getenv("OURDOGS_USER")
@@ -76,3 +73,11 @@ async def run_scraper():
 
         await browser.close()
         print("Text scraping complete.")
+
+def main():
+    import asyncio
+    asyncio.run(run_scraper())
+    deduplicate_drive_folder("golden-critiques")
+
+if __name__ == "__main__":
+    main()
