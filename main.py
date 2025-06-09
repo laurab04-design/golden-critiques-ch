@@ -4,7 +4,7 @@ subprocess.run(["playwright", "install", "chromium"], check=True)
 
 from fastapi import FastAPI
 from golden_critiques import run_scraper
-from critique_parsing import process_all_files  # ← Your parser
+from critique-parsing import process_all_files  #parser
 from drive_utils import upload_to_drive
 
 app = FastAPI()
