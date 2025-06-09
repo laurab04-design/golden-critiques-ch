@@ -3,6 +3,9 @@ import urllib.parse
 from pathlib import Path
 from playwright.async_api import async_playwright
 from drive_utils import upload_to_drive
+from drive_utils import deduplicate_drive_folder
+
+deduplicate_drive_folder("golden-critiques")
 
 BASE_URL = "https://www.ourdogs.co.uk"
 username = os.getenv("OURDOGS_USER")
