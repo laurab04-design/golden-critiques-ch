@@ -7,6 +7,10 @@ from drive_utils import upload_to_drive
 INPUT_FOLDER = "golden-critiques"
 OUTPUT_FILE = os.path.join(INPUT_FOLDER, "golden_critiques_by_dog.json")
 
+def extract_year_from_filename(filename):
+    match = re.search(r'(\d{4})', filename)
+    return int(match.group(1)) if match else None
+
 def extract_critique_text(text):
     text = fix_text(text)
     start = text.find("RETRIEVER GOLDEN")
@@ -41,7 +45,9 @@ def extract_dog_critiques(critique_text, source_file):
                         dog_critiques.setdefault(dog, []).append({
                             "class": class_header,
                             "critique": buffer.strip(),
-                            "source": source_file
+                            "source": source_file,
+                            "show": source_file.split("_")[0],
+                            "year": extract_year_from_filename(source_file)
                         })
                     buffer = ""
                 current_pos = chunk
@@ -56,7 +62,9 @@ def extract_dog_critiques(critique_text, source_file):
                 dog_critiques.setdefault(dog, []).append({
                     "class": class_header,
                     "critique": buffer.strip(),
-                    "source": source_file
+                    "source": source_file,
+                    "show": source_file.split("_")[0],
+                    "year": extract_year_from_filename(source_file)
                 })
 
     return dog_critiques
@@ -88,9 +96,7 @@ def process_all_files(input_folder, existing_data=None):
         for dog, entries in dog_critiques.items():
             all_dogs.setdefault(dog, []).extend(entries)
 
-    return all_dogs
-
-    # Deduplicate critiques per dog by exact critique text only (regardless of class/source)
+    # Deduplicate critiques per dog by exact text
     for dog, entries in all_dogs.items():
         seen_critique_texts = set()
         deduped = []
@@ -99,7 +105,10 @@ def process_all_files(input_folder, existing_data=None):
             if text and text not in seen_critique_texts:
                 seen_critique_texts.add(text)
                 deduped.append(entry)
+        deduped.sort(key=lambda e: e.get("year", 0), reverse=True)
         all_dogs[dog] = deduped
+
+    return all_dogs
 
 if __name__ == "__main__":
     if os.path.exists(OUTPUT_FILE):
