@@ -1,4 +1,5 @@
 import os
+import hashlib
 import urllib.parse
 from pathlib import Path
 from playwright.async_api import async_playwright
@@ -23,6 +24,13 @@ def extract_showname_from_url(url):
     showname_raw = qs.get("showname", ["Unknown"])[0]
     return showname_raw.replace("*", " ").strip().replace(" ", "_")
 
+def compute_md5(file_path):
+    hash_md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
 async def run_scraper():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -32,6 +40,7 @@ async def run_scraper():
         page = await context.new_page()
 
         seen_links = set()
+        seen_files = set()  # (filename, md5)
         os.makedirs("raw_show_text", exist_ok=True)
 
         for url in YEARLY_URLS:
@@ -67,7 +76,16 @@ async def run_scraper():
                     with open(filename, "w", encoding="utf-8") as f:
                         f.write(text)
                     print(f"Saved text to {filename}")
+
+                    file_md5 = compute_md5(filename)
+                    file_key = (os.path.basename(filename), file_md5)
+                    if file_key in seen_files:
+                        print(f"[SKIPPED] Already uploaded in this session: {file_key[0]}")
+                        continue
+
                     upload_to_drive(filename, "text/plain", "golden-critiques")
+                    seen_files.add(file_key)
+
                 except Exception as e:
                     print(f"Failed to fetch or save {full_url}: {e}")
 
